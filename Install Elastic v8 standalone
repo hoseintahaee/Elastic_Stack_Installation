@@ -1,0 +1,46 @@
+hostnamectl set-hostname elasticsearch
+nano /etc/hostname
+192.168.204.50 elasticsearch elasticsearch.tosinso.local 
+apt update	
+wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" > /etc/apt/sources.list.d/elastic-8.x.list
+apt update
+apt install elasticsearch -y
+nano /etc/elasticsearch/elasticsearch.yml
+
+cluster.name: tosinso.local
+network.host: 192.168.204.50
+
+vim /etc/elasticsearch/jvm.options
+
+systemctl daemon-reload
+systemctl enable --now elasticsearch
+systemctl status elasticsearch
+
+curl https://192.168.204.50:9200 --cacert /etc/elasticsearch/certs/http_ca.crt -u elastic
+ss -altnp | grep 9200
+
+apt install kibana
+vim /etc/kibana/kibana.yml
+
+server.port: 5601
+server.host: "192.168.204.50"
+
+/usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s kibana
+
+
+/usr/share/kibana/bin/kibana-encryption-keys generate
+
+#copy encryption-key tokibana yml :
+
+xpack.encryptedSavedObjects.encryptionKey: 706c88e045c127e21b81c902425cdb54
+xpack.reporting.encryptionKey: d67296d7d4958bdd1594e965e6b97ab9
+xpack.security.encryptionKey: d496d7cb6a5983c213f7902767069744
+
+systemctl enable --now kibana
+systemctl status kibana
+
+ufw allow 5601/tcp
+ufw allow 9200/tcp
+
+

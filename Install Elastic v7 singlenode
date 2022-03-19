@@ -1,4 +1,4 @@
-######################################Install Elastic stack##################################################################
+######################################Install Elastic stack#################################################################
 apt-get update
 apt-get install openjdk-11-jdk wget apt-transport-https curl gpgv gpgsm gnupg-l10n gnupg dirmngr -y
 export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64

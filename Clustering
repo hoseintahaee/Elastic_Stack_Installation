@@ -1,98 +1,295 @@
-##change ip, hostname 
 vi /etc/hosts
 192.168.104.175   ELK-node1 ELK-node1.tosinso.local
 192.168.104.176   ELK-node2 ELK-node2.tosinso.local
 192.168.104.177   ELK-node3 ELK-node3.tosinso.local
 192.168.104.178   ELK-kibana ELK-kibana.tosinso.local
 
-#install elastic search on each node and dont start 
-#install kibana on a seperate node
 
-##############1
-nano /etc/elasticsearch/elasticsearch.yml
-
+#####################vi /etc/elasticsearch/elasticsearch.yml
 cluster.name: ELK-tosinso
 node.name: ELK-node1
 path.data: /var/lib/elasticsearch
 path.logs: /var/log/elasticsearch
-network.host: 0.0.0.0
-http.port: 9200
+network.host: 192.168.104.175
 discovery.seed_hosts: ["192.168.104.175", "192.168.104.176", "192.168.104.177"]
-cluster.initial_master_nodes: ["ELK-node1", "ELK-node2"]
-
-##############2
-cd /usr/share/elasticsearch/bin
-./elasticsearch-certutil ca
-
-
-/usr/share/elasticsearch/elastic-stack-ca.p12
-./bin/elasticsearch-certutil cert --ca elastic-stack-ca.p12
-mkdir /tmp/certs
-cp -f elastic-certificates.p12 /tmp/certs
-cp -f elastic-stack-ca.p12 /tmp/certs
-cp -rf elasticsearch/http.p12 /tmp/certs
-cp -rf kibana/elasticsearch-ca.pem /tmp/certs
-chmod 777 /tmp/certs*
-
-##############3
-mkdir /etc/elasticsearch/certs
-cp -rf /tmp/certs/* /etc/elasticsearch/certs
-
-
-##############4
-mv /etc/elasticsearch/elasticsearch.yml /etc/elasticsearch/elasticsearch.yml.bak
-nano /etc/elasticsearch/elasticsearch.yml
+cluster.initial_master_nodes: ["192.168.104.175",]
+node.master: true
+node.voting_only: false
+node.data: false
+node.ingest: false
+node.ml: false
+xpack.ml.enabled: true
+cluster.remote.connect: false
 
 cluster.name: ELK-tosinso
-node.name: ELK-node1
+node.name: ELK-node2
 path.data: /var/lib/elasticsearch
 path.logs: /var/log/elasticsearch
-network.host: 0.0.0.0
-http.port: 9200
+network.host: 192.168.104.176
 discovery.seed_hosts: ["192.168.104.175", "192.168.104.176", "192.168.104.177"]
-cluster.initial_master_nodes: ["ELK-node1", "ELK-node2"]
+node.master: true
+node.voting_only: false
+node.data: true
+node.ingest: true
+node.ml: false
+xpack.ml.enabled: true
+cluster.remote.connect: false
+
+cluster.name: ELK-tosinso
+node.name: ELK-node3
+path.data: /var/lib/elasticsearch
+path.logs: /var/log/elasticsearch
+network.host: 192.168.104.177
+discovery.seed_hosts: ["192.168.104.175", "192.168.104.176", "192.168.104.177"]
+node.master: true
+node.voting_only: false
+node.data: true
+node.ingest: true
+node.ml: false
+xpack.ml.enabled: true
+cluster.remote.connect: false
+
+#####################on master
+sudo service elasticsearch/enable/status start
+
+#####################firewall
+firewall-cmd --add-port={9200,9300-9400}/tcp --permanent
+firewall-cmd --reload
+
+curl -XGET ELK-node1:9200
+#####################If the cluster uuid is properly generated, proceed with the start of other elasticsearch service
+sudo service elasticsearch/enable/status start
+curl -XGET ELK-node1:9200
+curl -XGET ELK-node2:9200
+curl -XGET ELK-node3:9200
+
+
+#####################check status of cluster
+curl -XGET http://192.168.104.175:9200/_cluster/health?pretty 
+curl -XGET http://192.168.104.176:9200/_cluster/stats?pretty
+curl -XGET 192.168.104.175:9200/_cluster/state?pretty |less
+curl -XGET ELK-node1:9200/_cat/nodes
+curl -XGET ELK-node1:9200/_cat/master
+
+#####################off swap 
+swapoff -a
+/etc/fstab
+
+#####################configure heap size and check
+/etc/elasticsearch/jvm.options
+curl -XGET 'http://server1:9200/_nodes/server1/stats/jvm?pretty&human'
+
+#####################mlock : prevent use from swap
+vim /etc/systemd/system/elasticsearch.service.d/override.conf
+
+[Service]
+LimitMEMLOCK=infinity
+
+systemctl daemon-reload
+
+
+vim /etc/elasticsearch/elasticsearch.yml
+
+bootstrap.memory_lock: true
+
+
+curl -XGET  'http://server1:9200/_nodes?pretty&filter_path=**.mlockall'
+
+
+ulimit -n 655356
+
+
+#####################set the limit permanently by editing the /etc/security/limits.conf and setting the no file for the user running Elasticsearch.
+elasticsearch  -  nofile  65535
+
+#################################Securte_connection###########################################################3
+vim /tmp/instance.yml
+instances:
+  - name: 'ELK-node1'
+    dns: [ 'ELK-node1.tosinso.local' ]
+    ip: [ '192.168.104.175' ]
+  - name: 'ELK-node2'
+    dns: [ 'ELK-node2.tosinso.local' ]
+    ip: [ '192.168.104.176' ]
+  - name: 'ELK-node3'
+    dns: [ 'ELK-node3.tosinso.local' ]
+    ip: [ '192.168.104.177' ]
+  - name: 'ELK-kibana'
+    dns: [ 'ELK-kibana.tosinso.local' ]
+    ip: [ '192.168.104.178' ]
+
+cd /usr/share/elasticsearch/
+bin/elasticsearch-certutil cert --keep-ca-key ca --pem --in /tmp/instance.yml --out /tmp/certs/certs.zip
+
+cd /tmp/certs/
+ll
+unzip certs.zip
+
+##############on each node make directory to paste certificate
+mkdir -p /etc/elasticsearch/certs
+mkdir -p /etc/kibana/certs
+
+
+###############On master node 
+cp /tmp/certs/ca/ca.crt /tmp/certs/server1/* /etc/elasticsearch/certs
+ls -l /etc/elasticsearch/certs
+
+###############for other nodes
+scp -r /tmp/certs/ca/ca.crt /tmp/certs/ELK-node2/* ELK-node2:/etc/elasticsearch/certs/
+scp -r /tmp/certs/ca/ca.crt /tmp/certs/ELK-node3/* ELK-node3:/etc/elasticsearch/certs/
+scp -r /tmp/certs/ca/ca.crt /tmp/certs/ELK-kibana/* ELK-kibana:/etc/elasticsearch/certs/
+
+################add xpack security to all node
+vim /etc/elasticsearch/elasticsearch
+
 xpack.security.enabled: true
 xpack.security.transport.ssl.enabled: true
-xpack.security.transport.ssl.verification_mode: certificate
-xpack.security.transport.ssl.client_authentication: required
-xpack.security.transport.ssl.keystore.path: /etc/elasticsearch/certs/elastic-certificates.p12
-xpack.security.transport.ssl.truststore.path: /etc/elasticsearch/certs/elastic-certificates.p12
+xpack.security.transport.ssl.key: certs/ELK-node1.key
+xpack.security.transport.ssl.certificate: certs/ELK-node1.crt
+xpack.security.transport.ssl.certificate_authorities: [ "certs/ca.crt" ]
+##################we can secure http to https 
 xpack.security.http.ssl.enabled: true
-xpack.security.http.ssl.keystore.path: /etc/elasticsearch/certs/http.p12
+xpack.security.http.ssl.key: certs/server1.key
+xpack.security.http.ssl.certificate: certs/server1.crt
+xpack.security.http.ssl.certificate_authorities: certs/ca.crt
+#####node2
+xpack.security.enabled: true
+xpack.security.transport.ssl.enabled: true
+xpack.security.transport.ssl.key: certs/ELK-node2.key
+xpack.security.transport.ssl.certificate: certs/ELK-node2.crt
+xpack.security.transport.ssl.certificate_authorities: [ "certs/ca.crt" ]
+##################we can secure http to https 
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.key: certs/ELK-node2.key
+xpack.security.http.ssl.certificate: certs/ELK-node2.crt
+xpack.security.http.ssl.certificate_authorities: certs/ca.crt
+#####node3
+xpack.security.enabled: true
+xpack.security.transport.ssl.enabled: true
+xpack.security.transport.ssl.key: certs/ELK-node3.key
+xpack.security.transport.ssl.certificate: certs/ELK-node3.crt
+xpack.security.transport.ssl.certificate_authorities: [ "certs/ca.crt" ]
+##################we can secure http to https 
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.key: certs/ELK-node3.key
+xpack.security.http.ssl.certificate: certs/ELK-node3.crt
+xpack.security.http.ssl.certificate_authorities: certs/ca.crt
 
 
-##############5
-cp /etc/elasticsearch/elasticsearch.yml /tmp/certs
+systemctl restart elasticsearch
+systemctl restart kibana
 
-##############6
-#mkdir /etc/elasticsearch/cert on each nodes (and kibana nodes)
-scp -rf /tmp/* ELK-node2:/etc/elasticsearch/certs/
-scp -rf /tmp/* ELK-kibana:/etc/kibana/certs/
 
-##############7
-#on each node, change node name in elasticsearch.yml and finaly restart 
-chmod root:elasticsearch /etc/elasticsearch/elasticsearch.yml
-chmod 755 /etc/elasticsearch/certs/*
+curl --cacert /etc/elasticsearch/certs/ca.crt -XGET https://server1.example.com:9200/_cat/nodes?pretty
 
-##############8
-#past kibana_system password and elastic to login
-/usr/share/elasticsearch/bin/elasticsearch-setup-passwords auto
+#######################Password (on node-1)
+/usr/share/elasticsearch/bin/elasticsearch-setup-passwords interactive
 
-#kibana node:
-nano kibana.yml
+
+curl --cacert /etc/elasticsearch/certs/ca.crt -u elastic -XGET https://server1.example.com:9200/_cat/nodes?pretty
+
+
+#################################Kibana###########################################################3
+
+#######################to monitor culster, on all nodes 
+vim /etc/elasticsearch/elasticsearch
+
+xpack.monitoring.collection.enabled: true
+xpack.monitoring.elasticsearch.collection.enabled: false
+
+
+
+
+
+sed  '/^#/d' /etc/kibana/kibana.yml | sed '/^$/d'
 
 server.port: 5601
-server.host: "0.0.0.0"
-server.publicBaseUrl: "http://192.168.104.178:5601"
-server.name: "ELK-kibana"
-elasticsearch.hosts:
-  - https://192.168.104.175:9200
-  - https://192.168.104.176:9200
-  - https://192.168.104.177:9200
-elasticsearch.username: "kibana_system"
-elasticsearch.password: "IUtJcRVyhYo7XKvcVZSv"
-elasticsearch.ssl.certificateAuthorities: [ "/etc/kibana/certs/elasticsearch-ca.pem" ]
+server.host: "192.168.0.14"
+server.name: "centos-8.example.com"
+elasticsearch.username: "kibana"
+elasticsearch.password: "Passw0rd"
 
 
 
+ls -l /etc/kibana/certs/
 
+vim /etc/kibana/kibana.yml
+
+server.ssl.enabled: true
+server.ssl.certificate: /etc/kibana/certs/ELK-kibana.crt
+server.ssl.key: /etc/kibana/certs/ELK-kibana.key
+elasticsearch.hosts: ["https://192.168.0.11:9200", "https://192.168.0.12:9200", "https://192.168.0.13:9200"]
+elasticsearch.ssl.certificateAuthorities: [ "/etc/kibana/certs/ca.crt" ]
+elasticsearch.ssl.verificationMode: 'full'
+
+
+firewall-cmd --add-port=5601/tcp --permanent
+firewall-cmd --reload
+
+systemctl restart kibana
+systemctl enable kibana --now
+netstat -ntlp | grep node
+
+##########################after afew seconde check error 
+journalctl -u kibana.service
+journalctl -u kibana.service -f
+
+https://192.168.104.178:5601/
+
+
+
+#################################metric beat###########################################################
+
+mkdir /etc/pki/elasticsearch
+ls -l /etc/pki/elasticsearch/
+
+curl -L -O https://artifacts.elastic.co/downloads/beats/metricbeat/metricbeat-7.17.1-x86_64.rpm
+rpm -vi metricbeat-7.5.1-x86_64.rpm
+
+
+  
+vim /etc/metricbeat/metricbeat.yml
+metricbeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+  
+setup.template.settings:
+  index.number_of_shards: 1
+  index.codec: best_compression
+
+setup.kibana:
+  # Kibana Host
+  host: "https://192.168.104.178:5601"
+
+output.elasticsearch:
+  hosts: ["https://ELK-node1.tosinso.local:9200", "https://ELK-node2.tosinso.local:9200", "https://ELK-node3.tosinso.local:9200"]
+  #Optional protocol and basic auth credentials.
+  #protocol: "https"
+  username: "elastic"
+  password: "Passw0rd"
+  ssl.certificate_authorities: ["/etc/elasticsearch/certs/ca.crt"]
+
+
+processors:
+  - add_host_metadata: ~
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - add_kubernetes_metadata: ~
+
+monitoring.enabled: true
+
+setup.template.settings:
+  index.number_of_shards: 1
+  index.codec: best_compression
+  
+######################enable module for monitoring of clusters
+metricbeat modules enable elasticsearch-xpack
+
+cat /etc/metricbeat/modules.d/elasticsearch-xpack.yml
+
+###########we can disable module system 
+metricbeat modules disable system
+
+systemctl start/enable/status metricbeat
+
+curl --cacert /etc/elasticsearch/certs/ca.crt -u elastic -XGET 'https://192.168.0.11:9200/metricbeat-*/_search?pretty' |less

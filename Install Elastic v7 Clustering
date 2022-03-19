@@ -5,7 +5,7 @@ vi /etc/hosts
 192.168.104.178   ELK-kibana ELK-kibana.tosinso.local
 
 
-#####################vi /etc/elasticsearch/elasticsearch.yml
+####################vi /etc/elasticsearch/elasticsearch.yml
 cluster.name: ELK-tosinso
 node.name: ELK-node1
 path.data: /var/lib/elasticsearch

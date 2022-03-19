@@ -31,7 +31,7 @@ server.host: "192.168.204.50"
 
 /usr/share/kibana/bin/kibana-encryption-keys generate
 
-#copy encryption-key tokibana yml :
+##copy encryption-key tokibana yml :
 
 xpack.encryptedSavedObjects.encryptionKey: 706c88e045c127e21b81c902425cdb54
 xpack.reporting.encryptionKey: d67296d7d4958bdd1594e965e6b97ab9
